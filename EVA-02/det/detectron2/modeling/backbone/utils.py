@@ -76,7 +76,10 @@ def get_rel_pos(q_size, k_size, rel_pos):
         Extracted positional embeddings according to relative positions.
     """
     max_rel_dist = int(2 * max(q_size, k_size) - 1)
-    use_log_interpolation = True
+    
+    # Set use_log_interpolation to False to use the faster vitdet approach https://github.com/facebookresearch/detectron2/blob/96c752ce821a3340e27edd51c28a00665dd32a30/detectron2/modeling/backbone/utils.py#L77.
+    #use_log_interpolation = True  # Slower
+    use_log_interpolation = False
 
     # Interpolate rel pos if needed.
     if rel_pos.shape[0] != max_rel_dist:
