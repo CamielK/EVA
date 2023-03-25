@@ -3,7 +3,7 @@ logs/
 wandb/
 work_dirs/
 scripts/
-datasets/
+#datasets/
 
 # output dir
 output
