@@ -213,7 +213,7 @@ def fast_rcnn_inference_single_image(
             offsets = idxs.to(boxes) * (max_coordinate + torch.tensor(1).to(boxes))
             boxes_for_nms = boxes + offsets[:, None]
             scores_for_nms = scores.to(torch.float32)  # Needed for mixed precision inference
-            dets, keep = soft_nms(boxes=boxes_for_nms, scores=scores, iou_threshold=iou_threshold,
+            dets, keep = soft_nms(boxes=boxes_for_nms, scores=scores_for_nms, iou_threshold=iou_threshold,
                                   sigma=sigma, min_score=1e-3, method=method)
             boxes = boxes[keep]
             # todo: try using original score
