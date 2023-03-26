@@ -178,35 +178,36 @@ def inference_on_dataset(
                     eval_seconds_per_iter = total_eval_time / iters_after_start
                     total_seconds_per_iter = (time.perf_counter() - start_time) / iters_after_start
 
-                    if model_time > 2 or idx % 10 == 0:
-                        eta = datetime.timedelta(seconds=int(total_seconds_per_iter * (total - idx - 1)))
-                        logger.info(
-                            f"Last Image {inputs[0]['file_name']}. "
-                            f"Last model time: {model_time:.4f} s. "
-                            f"Inference done {idx + 1}/{total}. "
-                            f"Dataloading: {data_seconds_per_iter:.4f} s/iter. "
-                            f"Inference: {compute_seconds_per_iter:.4f} s/iter. "
-                            f"Inference (no sync): {pure_compute_seconds_per_iter:.4f} s/iter. "
-                            f"Eval: {eval_seconds_per_iter:.4f} s/iter. "
-                            f"Total: {total_seconds_per_iter:.4f} s/iter. "
-                            f"ETA={eta}"
-                        )
-
-                    # if idx >= num_warmup * 2 or compute_seconds_per_iter > 5:
+                    # if model_time > 2 or idx % 10 == 0:
                     #     eta = datetime.timedelta(seconds=int(total_seconds_per_iter * (total - idx - 1)))
-                    #     log_every_n_seconds(
-                    #         logging.INFO,
-                    #         (
-                    #             f"Inference done {idx + 1}/{total}. "
-                    #             f"Dataloading: {data_seconds_per_iter:.4f} s/iter. "
-                    #             f"Inference: {compute_seconds_per_iter:.4f} s/iter. "
-                    #             f"Inference (no sync): {pure_compute_seconds_per_iter:.4f} s/iter. "
-                    #             f"Eval: {eval_seconds_per_iter:.4f} s/iter. "
-                    #             f"Total: {total_seconds_per_iter:.4f} s/iter. "
-                    #             f"ETA={eta}"
-                    #         ),
-                    #         n=5,
+                    #     logger.info(
+                    #         f"Last Image {inputs[0]['file_name']}. "
+                    #         f"Last model time: {model_time:.4f} s. "
+                    #         f"Inference done {idx + 1}/{total}. "
+                    #         f"Dataloading: {data_seconds_per_iter:.4f} s/iter. "
+                    #         f"Inference: {compute_seconds_per_iter:.4f} s/iter. "
+                    #         f"Inference (no sync): {pure_compute_seconds_per_iter:.4f} s/iter. "
+                    #         f"Eval: {eval_seconds_per_iter:.4f} s/iter. "
+                    #         f"Total: {total_seconds_per_iter:.4f} s/iter. "
+                    #         f"ETA={eta}"
                     #     )
+
+                    if idx >= num_warmup * 2 or model_time > 5:
+                        eta = datetime.timedelta(seconds=int(total_seconds_per_iter * (total - idx - 1)))
+                        log_every_n_seconds(
+                            logging.INFO,
+                            (
+                                f"Inference done {idx + 1}/{total}. "
+                                f"Dataloading: {data_seconds_per_iter:.4f} s/iter. "
+                                f"Inference: {compute_seconds_per_iter:.4f} s/iter. "
+                                f"Inference (no sync): {pure_compute_seconds_per_iter:.4f} s/iter. "
+                                f"Eval: {eval_seconds_per_iter:.4f} s/iter. "
+                                f"Total: {total_seconds_per_iter:.4f} s/iter. "
+                                f"Last model time: {model_time:.4f} s. "
+                                f"ETA={eta}"
+                            ),
+                            n=5,
+                        )
 
                     start_data_time = time.perf_counter()
 
