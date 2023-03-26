@@ -138,6 +138,7 @@ def inference_on_dataset(
     num_warmup = min(5, total - 1)
     start_time = time.perf_counter()
     total_data_time = 0
+    total_pure_compute_time = 0
     total_compute_time = 0
     total_eval_time = 0
     with ExitStack() as stack:
@@ -145,45 +146,69 @@ def inference_on_dataset(
             stack.enter_context(inference_context(model))
         stack.enter_context(torch.no_grad())
 
-        start_data_time = time.perf_counter()
-        for idx, inputs in enumerate(data_loader):
-            total_data_time += time.perf_counter() - start_data_time
-            if idx == num_warmup:
-                start_time = time.perf_counter()
-                total_data_time = 0
-                total_compute_time = 0
-                total_eval_time = 0
+        with torch.no_grad():
+            with torch.cuda.amp.autocast():
 
-            start_compute_time = time.perf_counter()
-            outputs = model(inputs)
-            if torch.cuda.is_available():
-                torch.cuda.synchronize()
-            total_compute_time += time.perf_counter() - start_compute_time
+                start_data_time = time.perf_counter()
+                for idx, inputs in enumerate(data_loader):
+                    total_data_time += time.perf_counter() - start_data_time
+                    if idx == num_warmup:
+                        start_time = time.perf_counter()
+                        total_data_time = 0
+                        total_pure_compute_time = 0
+                        total_compute_time = 0
+                        total_eval_time = 0
 
-            start_eval_time = time.perf_counter()
-            evaluator.process(inputs, outputs)
-            total_eval_time += time.perf_counter() - start_eval_time
+                    start_compute_time = time.perf_counter()
+                    outputs = model(inputs)
+                    model_time = time.perf_counter() - start_compute_time
+                    total_pure_compute_time += time.perf_counter() - start_compute_time
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()
+                    total_compute_time += time.perf_counter() - start_compute_time
 
-            iters_after_start = idx + 1 - num_warmup * int(idx >= num_warmup)
-            data_seconds_per_iter = total_data_time / iters_after_start
-            compute_seconds_per_iter = total_compute_time / iters_after_start
-            eval_seconds_per_iter = total_eval_time / iters_after_start
-            total_seconds_per_iter = (time.perf_counter() - start_time) / iters_after_start
-            if idx >= num_warmup * 2 or compute_seconds_per_iter > 5:
-                eta = datetime.timedelta(seconds=int(total_seconds_per_iter * (total - idx - 1)))
-                log_every_n_seconds(
-                    logging.INFO,
-                    (
-                        f"Inference done {idx + 1}/{total}. "
-                        f"Dataloading: {data_seconds_per_iter:.4f} s/iter. "
-                        f"Inference: {compute_seconds_per_iter:.4f} s/iter. "
-                        f"Eval: {eval_seconds_per_iter:.4f} s/iter. "
-                        f"Total: {total_seconds_per_iter:.4f} s/iter. "
-                        f"ETA={eta}"
-                    ),
-                    n=5,
-                )
-            start_data_time = time.perf_counter()
+                    start_eval_time = time.perf_counter()
+                    evaluator.process(inputs, outputs)
+                    total_eval_time += time.perf_counter() - start_eval_time
+
+                    iters_after_start = idx + 1 - num_warmup * int(idx >= num_warmup)
+                    data_seconds_per_iter = total_data_time / iters_after_start
+                    pure_compute_seconds_per_iter = total_pure_compute_time / iters_after_start
+                    compute_seconds_per_iter = total_compute_time / iters_after_start
+                    eval_seconds_per_iter = total_eval_time / iters_after_start
+                    total_seconds_per_iter = (time.perf_counter() - start_time) / iters_after_start
+
+                    if model_time > 2 or idx % 10 == 0:
+                        eta = datetime.timedelta(seconds=int(total_seconds_per_iter * (total - idx - 1)))
+                        logger.info(
+                            f"Last Image {inputs[0]['file_name']}. "
+                            f"Last model time: {model_time:.4f} s. "
+                            f"Inference done {idx + 1}/{total}. "
+                            f"Dataloading: {data_seconds_per_iter:.4f} s/iter. "
+                            f"Inference: {compute_seconds_per_iter:.4f} s/iter. "
+                            f"Inference (no sync): {pure_compute_seconds_per_iter:.4f} s/iter. "
+                            f"Eval: {eval_seconds_per_iter:.4f} s/iter. "
+                            f"Total: {total_seconds_per_iter:.4f} s/iter. "
+                            f"ETA={eta}"
+                        )
+
+                    # if idx >= num_warmup * 2 or compute_seconds_per_iter > 5:
+                    #     eta = datetime.timedelta(seconds=int(total_seconds_per_iter * (total - idx - 1)))
+                    #     log_every_n_seconds(
+                    #         logging.INFO,
+                    #         (
+                    #             f"Inference done {idx + 1}/{total}. "
+                    #             f"Dataloading: {data_seconds_per_iter:.4f} s/iter. "
+                    #             f"Inference: {compute_seconds_per_iter:.4f} s/iter. "
+                    #             f"Inference (no sync): {pure_compute_seconds_per_iter:.4f} s/iter. "
+                    #             f"Eval: {eval_seconds_per_iter:.4f} s/iter. "
+                    #             f"Total: {total_seconds_per_iter:.4f} s/iter. "
+                    #             f"ETA={eta}"
+                    #         ),
+                    #         n=5,
+                    #     )
+
+                    start_data_time = time.perf_counter()
 
     # Measure the time only for this worker (before the synchronization barrier)
     total_time = time.perf_counter() - start_time
