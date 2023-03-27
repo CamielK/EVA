@@ -17,7 +17,9 @@ from .utils import (
     get_abs_pos,
     window_partition,
     window_unpartition,
+    VisionRotaryEmbedding,
     VisionRotaryEmbeddingFast,
+    VisionRotaryEmbeddingRectangularImage,
 )
 
 try:
@@ -296,7 +298,7 @@ class ViT(Backbone):
 
     def __init__(
         self,
-        img_size=1024,
+        img_size=1024,  # should be tuple (width, height) if use_rect_rope_glb==True
         patch_size=16,
         in_chans=3,
         embed_dim=768,
@@ -320,6 +322,7 @@ class ViT(Backbone):
         pretrain_use_cls_token=True,
         out_feature="last_feat",
         xattn=True,
+        use_rect_rope_glb=False
     ):
         """
         Args:
@@ -365,18 +368,40 @@ class ViT(Backbone):
 
 
         half_head_dim = embed_dim // num_heads // 2
-        hw_seq_len = img_size // patch_size
 
         self.rope_win = VisionRotaryEmbeddingFast(
             dim=half_head_dim,
             pt_seq_len=pt_hw_seq_len,
             ft_seq_len=window_size if intp_freq else None,
         )
-        self.rope_glb = VisionRotaryEmbeddingFast(
-            dim=half_head_dim,
-            pt_seq_len=pt_hw_seq_len,
-            ft_seq_len=hw_seq_len if intp_freq else None,
-        )
+
+        if use_rect_rope_glb:
+            # Custom rectangular rope GLB (input images do not have to be square padded)
+            # Note: set model.backbone.net.square_pad to 0 to take full benefit of this change
+            # Note: if you use this logic, your inputs must all have the same size. A variable size input will throw an error.
+            assert type(img_size) is not int, "Invalid argument for ViT: 'img_size' must be a tuple or list (width, height). Set 'use_rect_rope_glb' to False to use a square rope"
+            img_width = img_size[0]
+            img_height = img_size[1]
+            print('======== Using rectangular rope GLB: ', (img_width, img_height) , ' (width, height) ========')
+            self.rope_glb = VisionRotaryEmbeddingRectangularImage(
+                dim=half_head_dim,
+                pt_seq_len=pt_hw_seq_len,
+                img_width=img_width,
+                img_height=img_height,
+            )
+        else:
+            # Default rope GLB from EVA-02 (only accepts square padded inputs during forward pass)
+            if type(img_size) is int:
+                max_dim = img_size
+            else:
+                max_dim = max(img_size)
+            hw_seq_len = max_dim // patch_size  # Only works for square padded inputs
+            print('======== Using square padded rope GLB: ', (max_dim, max_dim) , ' (width, height) ========')
+            self.rope_glb = VisionRotaryEmbeddingFast(
+                dim=half_head_dim,
+                pt_seq_len=pt_hw_seq_len,
+                ft_seq_len=hw_seq_len if intp_freq else None,
+            )
 
         # stochastic depth decay rule
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]

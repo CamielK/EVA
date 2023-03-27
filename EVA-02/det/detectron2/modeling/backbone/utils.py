@@ -12,7 +12,9 @@ __all__ = [
     "add_decomposed_rel_pos",
     "get_abs_pos",
     "PatchEmbed",
+    "VisionRotaryEmbedding",
     "VisionRotaryEmbeddingFast",
+    "VisionRotaryEmbeddingRectangularImage",
 ]
 
 
@@ -348,5 +350,44 @@ class VisionRotaryEmbeddingFast(nn.Module):
 
         print('======== shape of rope freq', self.freqs_cos.shape, '========')
 
-    def forward(self, t): return  t * self.freqs_cos + rotate_half(t) * self.freqs_sin
+    def forward(self, t):
+        a = t * self.freqs_cos
+        b = rotate_half(t) * self.freqs_sin
+        return a + b
+
+
+class VisionRotaryEmbeddingRectangularImage(nn.Module):
+    def __init__(
+            self,
+            dim,
+            pt_seq_len=16,
+            img_width=1024,
+            img_height=1024,
+    ):
+        super().__init__()
+        freqs = 1. / (10000 ** (torch.arange(0, dim, 2)[:(dim // 2)].float() / dim))
+
+        x_patches = img_width // pt_seq_len
+        y_patches = img_height // pt_seq_len
+
+        ft_seq_len = max(x_patches, y_patches)
+
+        t = torch.arange(ft_seq_len) / ft_seq_len * pt_seq_len
+
+        freqs = torch.einsum('..., f -> ... f', t, freqs)
+        freqs = repeat(freqs, '... n -> ... (n r)', r=2)
+        freqs = broadcat((freqs[:x_patches, None, :], freqs[None, :y_patches, :]), dim=-1)
+
+        freqs_cos = freqs.cos().view(-1, freqs.shape[-1])
+        freqs_sin = freqs.sin().view(-1, freqs.shape[-1])
+
+        self.register_buffer("freqs_cos", freqs_cos)
+        self.register_buffer("freqs_sin", freqs_sin)
+
+        print('======== shape of rope freq', self.freqs_cos.shape, '========')
+
+    def forward(self, t):
+        a = t * self.freqs_cos
+        b = rotate_half(t) * self.freqs_sin
+        return a + b
 
